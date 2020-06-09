@@ -37,6 +37,8 @@ class NiMC(object):
 
         self.set_context(context)
 
+        self.initialize()
+
         if k is None:
             k = self.k
 

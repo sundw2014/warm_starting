@@ -14,7 +14,7 @@ prob_far = np.array([0.15,0.15,0.7])
 v_brake = 1
 v_cruise = 4
 v_speedup = 7
-v_error = 0.1
+v_error = 0.
 velocities = [v_brake, v_cruise, v_speedup]
 
 threshold_close = 3
@@ -22,11 +22,13 @@ threshold_far = 5
 
 unsafe_rule_close = 1
 
-num_cars = 4
+num_cars = 2
 initial_separation_between_cars = 10
 range_of_initial_set_per_car = 5
-Theta = [range(n*initial_separation_between_cars, n*initial_separation_between_cars+range_of_initial_set_per_car+1) for n in range(num_cars)]
+# Theta = [range(n*initial_separation_between_cars, n*initial_separation_between_cars+range_of_initial_set_per_car+1) for n in range(num_cars)]
+Theta = [range(0, range_of_initial_set_per_car+1), [initial_separation_between_cars,]]
 Theta = np.meshgrid(*Theta)
+Theta = np.stack([a.reshape(-1) for a in Theta]).T[:,::-1]
 
 class Slplatoon_nimc(NiMC):
     def __init__(self, k=11):
@@ -34,9 +36,7 @@ class Slplatoon_nimc(NiMC):
         self.set_Theta(Theta)
         self.set_k(k)
 
-        self.actions = [[] for _ in range(num_cars)]
-
-    def set_conext(self, context):
+    def set_context(self, context):
         velocities[0] = context[0]
         self.reaction_time = context[1]
 
@@ -45,6 +45,9 @@ class Slplatoon_nimc(NiMC):
             if state[i-1] - state[i] < unsafe_rule_close:
                 return True
         return False
+
+    def initialize(self):
+        self.actions = [[] for _ in range(num_cars)]
 
     def transition(self, state):
         assert len(state) == num_cars
@@ -55,7 +58,7 @@ class Slplatoon_nimc(NiMC):
         state_current = dllist()
 
         # update the state
-        for car in llist_generator(state_old):
+        for i, car in enumerate(llist_generator(state_old)):
             ita = np.random.randn() * v_error
             #print(ita)
             if car is state_old.first:
@@ -73,7 +76,7 @@ class Slplatoon_nimc(NiMC):
                     p = self.actions[i][-int(self.reaction_time)-1]
 
                 v = np.random.choice(velocities, p = p)
-                position = car.value + v# + ita
+                position = car.value + v + ita
                 state_current.append(position)
         state = list(state_current)
         return state
@@ -83,15 +86,15 @@ class Slplatoon_withContext(ContextualMAB):
     def __init__(self):
         super(Slplatoon_withContext, self).__init__()
         self.nimc = Slplatoon_nimc()
-        self.nU = 4
-        self.context_map = [[1,], [0, 1, 2, 3]]
-        self.set_constants(nArms = len(self.nimc.Theta), nZ = 1, nU = self.nU)
+        self.nU = 2
+        self.nZ = 2
+        self.context_map = [[0, 1], [0, 1]]
+        self.set_constants(nArms = self.nimc.Theta.shape[0], nZ = self.nZ, nU = self.nU)
 
     def sample_context(self):
         context = [0, np.random.randint(self.nU)]
         return context
 
     def play_context(self, arm, context):
-        context = [self.context_map[i][context[i]] for i in len(context)]
-        self.nimc.set_conext(context)
-        return self.nimc(nimc.Theta[arm,:])
+        context = [self.context_map[i][context[i]] for i in range(len(context))]
+        return self.nimc(self.nimc.Theta[arm,:], context)
